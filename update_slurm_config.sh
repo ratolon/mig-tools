@@ -15,31 +15,20 @@ done
 
 echo "[INFO] Detecting MIG configuration..."
 
-declare -A COUNTS
+nvidia-smi -L | awk -v node="${NODE_NAME}" '
+match($0, /^[[:space:]]*MIG[[:space:]]+([0-9]+g\.[0-9]+gb)[[:space:]]+Device[[:space:]]+[0-9]+:/, m) {
+    counts["a100_" m[1]]++
+}
+END {
+    for (type in counts) {
+        printf "NodeName=%s Name=gpu Type=%s Count=%d\n", node, type, counts[type]
+    }
+}
+' > "${TMP_GRES}"
 
-current_gpu=""
-
-while read -r line; do
-    if [[ "$line" =~ ^GPU\ ([0-9]+): ]]; then
-        echo "Reading MIGs in GPU ${BASH_REMATCH[1]}"
-        current_gpu="${BASH_REMATCH[1]}"
-    fi
-
-    if [[ "$line" =~ [[:space:]]MIG[[:space:]]+([0-9]+g\.[0-9]+gb)[[:space:]]+Device[[:space:]]+[0-9]+: ]]; then
-        mig="${BASH_REMATCH[1]}"
-        key="a100_${mig}"
-        echo "${mig}"
-        echo "${key}"
-        ((COUNTS[$key]++))
-    fi
-done < <(nvidia-smi -L)
-
-> "${TMP_GRES}"
-
-for type in "${!COUNTS[@]}"; do
-    count="${COUNTS[$type]}"
-    echo "NodeName=${NODE_NAME} Name=gpu Type=${type} Count=${count}" >> "${TMP_GRES}"
-done
+if [[ ! -s "${TMP_GRES}" ]]; then
+    echo "[WARN] No MIG devices detected from nvidia-smi -L"
+fi
 
 echo "[INFO] Generated GRES:"
 cat "${TMP_GRES}"
