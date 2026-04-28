@@ -99,7 +99,6 @@ show_menu() {
 			;;
 		dialog)
 			if ! selection="$(dialog \
-				--clear \
 				--stdout \
 				--title "$title" \
 				--menu "$prompt" \

@@ -5,6 +5,7 @@ set -o pipefail
 
 readonly REFRESH_SECONDS="${MIG_STATUS_REFRESH_SECONDS:-10}"
 readonly MIN_WIDTH=60
+readonly PLAIN_CONTENT_MAX_WIDTH=92
 
 PLAIN_MODE=0
 
@@ -13,6 +14,41 @@ trim() {
 	value="${value#"${value%%[![:space:]]*}"}"
 	value="${value%"${value##*[![:space:]]}"}"
 	printf '%s\n' "$value"
+}
+
+truncate_text() {
+	local text="$1"
+	local max_width="$2"
+
+	if (( ${#text} <= max_width )); then
+		printf '%s\n' "$text"
+		return 0
+	fi
+
+	if (( max_width <= 3 )); then
+		printf '%s\n' "${text:0:max_width}"
+		return 0
+	fi
+
+	printf '%s...\n' "${text:0:$(( max_width - 3 ))}"
+}
+
+center_text() {
+	local text="$1"
+	local width="$2"
+	local text_len=${#text}
+	local left_padding=0
+	local right_padding=0
+
+	if (( text_len >= width )); then
+		printf '%s\n' "$text"
+		return 0
+	fi
+
+	left_padding=$(( (width - text_len) / 2 ))
+	right_padding=$(( width - text_len - left_padding ))
+
+	printf '%s%s%s\n' "$(repeat_char "$left_padding" ' ')" "$text" "$(repeat_char "$right_padding" ' ')"
 }
 
 get_terminal_width() {
@@ -174,12 +210,13 @@ render_plain_status() {
 	local rows
 	local line_count=0
 	local gpu_index
-	local gpu_model
 	local mig_mode
 	local mig_layout
 	local status_line
-	local decoration_width
-	local decoration_line
+	local content_line
+	local content_width=0
+	local border_line
+	local separator_line=""
 
 	rows="$(get_gpu_rows)"
 
@@ -203,22 +240,35 @@ render_plain_status() {
 			status_line="GPU $gpu_index - MIG Off"
 		fi
 
-		decoration_width=${#status_line}
-		if (( decoration_width < 24 )); then
-			decoration_width=24
+		status_line="$(truncate_text "$status_line" "$PLAIN_CONTENT_MAX_WIDTH")"
+		if (( ${#status_line} > content_width )); then
+			content_width=${#status_line}
 		fi
 
-		decoration_line="$(repeat_char "$decoration_width" "-")"
-		printf '%s\n' "$decoration_line"
-		printf '%s\n' "$status_line"
-		printf '%s\n\n' "$decoration_line"
+		if [[ -n "$separator_line" ]]; then
+			separator_line+=$'\n'
+		fi
+		separator_line+="$status_line"
 
 		line_count=$(( line_count + 1 ))
 	done <<< "$rows"
 
 	if (( line_count == 0 )); then
 		printf '%s\n' "No se han podido interpretar las GPUs detectadas."
+		return 0
 	fi
+
+	if (( content_width < 24 )); then
+		content_width=24
+	fi
+
+	border_line="+$(repeat_char "$(( content_width + 2 ))" '-')+"
+
+	while IFS= read -r content_line; do
+		printf '%s\n' "$border_line"
+		printf '| %s |\n' "$(center_text "$content_line" "$content_width")"
+		printf '%s\n\n' "$border_line"
+	done <<< "$separator_line"
 }
 
 parse_args() {
