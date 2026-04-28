@@ -46,7 +46,7 @@ if [[ -s "${TMP_COUNTS}" ]]; then
         if (NR > 1) {
             printf ","
         }
-        printf "gpu:%s:%s", $1, $2
+        printf "gpu:%s:nvidia_a100_80gb_pcie_%s", $1, $2
     }
     END {
         printf "\n"
