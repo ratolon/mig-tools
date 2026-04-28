@@ -28,6 +28,8 @@ while read -r line; do
     if [[ "$line" =~ MIG\ ([0-9]+g\.[0-9]+gb)\ Device ]]; then
         mig="${BASH_REMATCH[1]}"
         key="a100_${mig}"
+        echo "${mig}"
+        echo "${key}"
         ((COUNTS[$key]++))
     fi
 done < <(nvidia-smi -L)
