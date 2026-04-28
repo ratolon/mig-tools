@@ -361,7 +361,6 @@ show_preset_load_menu() {
 	local presets=()
 	local preset_list
 	local option=""
-	local preset_menu_height=12
 
 	if [[ ! -f "$PRESETS_FILE" ]]; then
 		show_message \
@@ -395,10 +394,9 @@ show_preset_load_menu() {
 	presets+=("v" "Volver")
 
 	while true; do
-		option="$(show_scrollable_menu \
+		option="$(show_menu \
 			"Carga de presets" \
 			"Selecciona un preset para aplicar:" \
-			"$preset_menu_height" \
 			"${presets[@]}")"
 
 		case "$option" in
