@@ -59,6 +59,7 @@ parse_preset_config() {
 apply_preset() {
 	local preset_name="$1"
 	local output_msg=""
+	local exit_code
 
 	if [[ ! -f "$PRESETS_FILE" ]]; then
 		show_message "Error" "No se encontro el archivo de presets en:\n$PRESETS_FILE"
@@ -80,22 +81,32 @@ apply_preset() {
 		output_msg+="  - Limpiando estado MIG...\n"
 
 		output_msg+="  - Eliminando DCI virtual (Compute)...\n"
-		if ! nvidia-smi mig -i "$gpu_id" -dci >/dev/null 2>&1; then
-			output_msg+="  - [ERROR] No se pudo destruir CI en GPU  $gpu_id\n"
+		nvidia-smi mig -i "$gpu_id" -dci >/dev/null 2>&1
+		exit_code=$?
+		if (( exit_code != 0 && exit_code != 6 )); then
+			output_msg+="  - [ERROR] No se pudo destruir CI en GPU $gpu_id (codigo $exit_code)\n"
 			continue
+		elif (( exit_code == 6 )); then
+			output_msg+="    (No habia CI que limpiar)\n"
 		fi
 
 		output_msg+="  - Eliminando DGI virtual (Graphics)...\n"
-		if ! nvidia-smi mig -i "$gpu_id" -dgi >/dev/null 2>&1; then
-			output_msg+="  - [ERROR] No se pudo destruir GI en GPU  $gpu_id\n"
+		nvidia-smi mig -i "$gpu_id" -dgi >/dev/null 2>&1
+		exit_code=$?
+		if (( exit_code != 0 && exit_code != 6 )); then
+			output_msg+="  - [ERROR] No se pudo destruir GI en GPU $gpu_id (codigo $exit_code)\n"
 			continue
+		elif (( exit_code == 6 )); then
+			output_msg+="    (No habia GI que limpiar)\n"
 		fi
 
 		output_msg+="  - Creando MIGs...\n"
 		IFS=',' read -ra mig_ids <<< "$mig_config"
 		for mig_id in "${mig_ids[@]}"; do
 			mig_id="$(printf '%s\n' "$mig_id" | xargs)"
-			if ! nvidia-smi -i "$gpu_id" mig create -C -gi "$mig_id" >/dev/null 2>&1; then
+			if nvidia-smi -i "$gpu_id" mig create -C -gi "$mig_id" >/dev/null 2>&1; then
+				output_msg+="    OK: MIG tipo $mig_id creado\n"
+			else
 				output_msg+="    [WARN] No se pudo crear MIG tipo $mig_id en GPU $gpu_id\n"
 			fi
 		done
