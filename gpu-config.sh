@@ -24,7 +24,11 @@ list_available_presets() {
 		return 1
 	fi
 
-	grep -E '^\[.+\]$' "$PRESETS_FILE" | sed 's/\[//g; s/\]//g'
+	if [[ ! -r "$PRESETS_FILE" ]]; then
+		return 1
+	fi
+
+	grep -E '^\[.+\]$' "$PRESETS_FILE" 2>/dev/null | sed 's/\[//g; s/\]//g' || return 1
 }
 
 parse_preset_config() {
@@ -359,18 +363,34 @@ show_preset_load_menu() {
 	local option=""
 	local preset_menu_height=12
 
-	preset_list="$(list_available_presets)"
+	if [[ ! -f "$PRESETS_FILE" ]]; then
+		show_message \
+			"Carga de presets" \
+			"No se encontro el archivo de presets.\n\nRuta esperada:\n$PRESETS_FILE"
+		return 1
+	fi
+
+	preset_list="$(list_available_presets)" || preset_list=""
 
 	if [[ -z "$preset_list" ]]; then
 		show_message \
 			"Carga de presets" \
-			"No se encontraron presets disponibles.\n\nVerifica que el archivo de presets existe en:\n$PRESETS_FILE"
+			"No se encontraron presets disponibles en:\n$PRESETS_FILE\n\nVerifica que el archivo contiene secciones [nombre_preset]."
 		return 0
 	fi
 
 	while IFS= read -r preset_name; do
-		presets+=("$preset_name" "Cargar preset: $preset_name")
+		if [[ -n "$preset_name" ]]; then
+			presets+=("$preset_name" "Cargar preset: $preset_name")
+		fi
 	done <<< "$preset_list"
+
+	if (( ${#presets[@]} == 0 )); then
+		show_message \
+			"Carga de presets" \
+			"No se encontraron presets disponibles."
+		return 0
+	fi
 
 	presets+=("v" "Volver")
 
