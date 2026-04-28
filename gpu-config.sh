@@ -60,6 +60,14 @@ apply_preset() {
 	local preset_name="$1"
 	local output_msg=""
 	local exit_code
+	local total_ok=0
+	local total_warn=0
+	local total_err=0
+	local total_skip=0
+	local gpu_ok
+	local gpu_warn
+	local gpu_err
+	local gpu_status
 
 	if [[ ! -f "$PRESETS_FILE" ]]; then
 		show_message "Error" "No se encontro el archivo de presets en:\n$PRESETS_FILE"
@@ -70,10 +78,14 @@ apply_preset() {
 
 	for gpu_id in 0 1 2 3; do
 		local mig_config
+		gpu_ok=0
+		gpu_warn=0
+		gpu_err=0
 		mig_config="$(parse_preset_config "$preset_name" "$gpu_id")"
 
 		if [[ "$mig_config" == "-" ]]; then
 			output_msg+="GPU $gpu_id: No configurada (saltada)\n"
+			total_skip=$(( total_skip + 1 ))
 			continue
 		fi
 
@@ -85,6 +97,9 @@ apply_preset() {
 		exit_code=$?
 		if (( exit_code != 0 && exit_code != 6 )); then
 			output_msg+="  - [ERROR] No se pudo destruir CI en GPU $gpu_id (codigo $exit_code)\n"
+			gpu_err=$(( gpu_err + 1 ))
+			total_err=$(( total_err + 1 ))
+			output_msg+="GPU $gpu_id: ERR\n\n"
 			continue
 		elif (( exit_code == 6 )); then
 			output_msg+="    (No habia CI que limpiar)\n"
@@ -95,6 +110,9 @@ apply_preset() {
 		exit_code=$?
 		if (( exit_code != 0 && exit_code != 6 )); then
 			output_msg+="  - [ERROR] No se pudo destruir GI en GPU $gpu_id (codigo $exit_code)\n"
+			gpu_err=$(( gpu_err + 1 ))
+			total_err=$(( total_err + 1 ))
+			output_msg+="GPU $gpu_id: ERR\n\n"
 			continue
 		elif (( exit_code == 6 )); then
 			output_msg+="    (No habia GI que limpiar)\n"
@@ -106,13 +124,31 @@ apply_preset() {
 			mig_id="$(printf '%s\n' "$mig_id" | xargs)"
 			if nvidia-smi mig -i "$gpu_id" -cgi "$mig_id" -C >/dev/null 2>&1; then
 				output_msg+="    OK: MIG tipo $mig_id creado\n"
+				gpu_ok=$(( gpu_ok + 1 ))
+				total_ok=$(( total_ok + 1 ))
 			else
 				output_msg+="    [WARN] No se pudo crear MIG tipo $mig_id en GPU $gpu_id\n"
+				gpu_warn=$(( gpu_warn + 1 ))
+				total_warn=$(( total_warn + 1 ))
 			fi
 		done
 
-		output_msg+="GPU $gpu_id: OK\n\n"
+		if (( gpu_err > 0 )); then
+			gpu_status="ERR"
+		elif (( gpu_warn > 0 )); then
+			gpu_status="WARN"
+		else
+			gpu_status="OK"
+		fi
+
+		output_msg+="GPU $gpu_id: $gpu_status (OK=$gpu_ok WARN=$gpu_warn ERR=$gpu_err)\n\n"
 	done
+
+	output_msg+="Resumen global:\n"
+	output_msg+="  OK=$total_ok\n"
+	output_msg+="  WARN=$total_warn\n"
+	output_msg+="  ERR=$total_err\n"
+	output_msg+="  SKIP=$total_skip\n"
 
 	show_status_message "Resultado" "$output_msg"
 	return 0
