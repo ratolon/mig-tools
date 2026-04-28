@@ -6,7 +6,7 @@ GRES_CONF="/etc/slurm/gres.conf"
 TMP_GRES="/tmp/gres.conf.$$"
 
 echo "[INFO] Draining node ${NODE_NAME}..."
-scontrol update NodeName=${NODE_NAME} State=DRAIN Reason="MIG reconfig"
+#scontrol update NodeName=${NODE_NAME} State=DRAIN Reason="MIG reconfig"
 
 echo "[INFO] Waiting for jobs to finish..."
 while squeue -w ${NODE_NAME} -h | grep -q .; do
@@ -41,12 +41,12 @@ done
 echo "[INFO] Generated GRES:"
 cat "${TMP_GRES}"
 
-cp "${TMP_GRES}" "${GRES_CONF}"
+#cp "${TMP_GRES}" "${GRES_CONF}"
 
-echo "[INFO] Reconfiguring SLURM..."
-scontrol reconfigure
+# echo "[INFO] Reconfiguring SLURM..."
+#scontrol reconfigure
 
-echo "[INFO] Resuming node..."
-scontrol update NodeName=${NODE_NAME} State=RESUME
+#echo "[INFO] Resuming node..."
+#scontrol update NodeName=${NODE_NAME} State=RESUME
 
 echo "[INFO] Done."
