@@ -114,7 +114,7 @@ apply_preset() {
 		output_msg+="GPU $gpu_id: OK\n\n"
 	done
 
-	show_message "Resultado" "$output_msg"
+	show_status_message "Resultado" "$output_msg"
 	return 0
 }
 
