@@ -6,6 +6,7 @@ set -o pipefail
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly MIG_STATUS_VIEWER="$SCRIPT_DIR/scripts/mig-status-view.sh"
 readonly PRESETS_FILE="$SCRIPT_DIR/presets.conf"
+readonly MIG_TYPES_FILE="$SCRIPT_DIR/mig-types.conf"
 readonly APP_TITLE="GPU MIG Config"
 readonly APP_HEIGHT=16
 readonly APP_WIDTH=72
@@ -29,6 +30,31 @@ list_available_presets() {
 	fi
 
 	grep -E '^\[.+\]$' "$PRESETS_FILE" 2>/dev/null | sed 's/\[//g; s/\]//g' || return 1
+}
+
+list_available_mig_types() {
+	if [[ ! -f "$MIG_TYPES_FILE" ]]; then
+		return 1
+	fi
+
+	if [[ ! -r "$MIG_TYPES_FILE" ]]; then
+		return 1
+	fi
+
+	awk -F'|' '
+		/^[[:space:]]*#/ || /^[[:space:]]*$/ {
+			next
+		}
+		NF >= 2 {
+			id = $1
+			name = $2
+			gsub(/^[[:space:]]+|[[:space:]]+$/, "", id)
+			gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
+			if (id ~ /^[0-9]+$/ && name != "") {
+				print id "|" name
+			}
+		}
+	' "$MIG_TYPES_FILE"
 }
 
 parse_preset_config() {
@@ -240,6 +266,44 @@ show_menu() {
 			;;
 	esac
 	printf '%s\n' "$selection"
+}
+
+show_checklist() {
+	local title="$1"
+	local prompt="$2"
+	local list_height="$3"
+	shift 3
+
+	local selection=""
+	local normalized=""
+
+	case "$UI_BACKEND" in
+		whiptail)
+			if ! selection="$(whiptail \
+				--title "$title" \
+				--checklist "$prompt" \
+				"$APP_HEIGHT" "$APP_WIDTH" "$list_height" \
+				"$@" \
+				--separate-output \
+				3>&1 1>&2 2>&3)"; then
+				selection=""
+			fi
+			;;
+		dialog)
+			if ! selection="$(dialog \
+				--stdout \
+				--separate-output \
+				--title "$title" \
+				--checklist "$prompt" \
+				"$APP_HEIGHT" "$APP_WIDTH" "$list_height" \
+				"$@")"; then
+				selection=""
+			fi
+			;;
+	esac
+
+	normalized="$(printf '%s\n' "$selection" | sed '/^[[:space:]]*$/d' | paste -sd ',' -)"
+	printf '%s\n' "$normalized"
 }
 
 show_scrollable_menu() {
@@ -456,10 +520,141 @@ show_preset_load_menu() {
 	done
 }
 
+apply_manual_gpu_config() {
+	local gpu_id="$1"
+	local mig_config="$2"
+	local output_msg=""
+	local exit_code
+	local gpu_ok=0
+	local gpu_warn=0
+	local gpu_err=0
+	local gpu_status=""
+
+	output_msg+="Configuracion manual de GPU $gpu_id\n"
+	output_msg+="Tipos seleccionados: $mig_config\n\n"
+
+	output_msg+="Limpiando estado MIG...\n"
+	nvidia-smi mig -i "$gpu_id" -dci >/dev/null 2>&1
+	exit_code=$?
+	if (( exit_code != 0 && exit_code != 6 )); then
+		output_msg+="[ERROR] No se pudo destruir CI (codigo $exit_code)\n"
+		gpu_err=$(( gpu_err + 1 ))
+	fi
+
+	nvidia-smi mig -i "$gpu_id" -dgi >/dev/null 2>&1
+	exit_code=$?
+	if (( exit_code != 0 && exit_code != 6 )); then
+		output_msg+="[ERROR] No se pudo destruir GI (codigo $exit_code)\n"
+		gpu_err=$(( gpu_err + 1 ))
+	fi
+
+	if (( gpu_err > 0 )); then
+		output_msg+="\nNo se aplico la configuracion por errores durante la limpieza.\n"
+		show_status_message "Resultado" "$output_msg"
+		return 1
+	fi
+
+	output_msg+="Creando MIGs...\n"
+	IFS=',' read -ra mig_ids <<< "$mig_config"
+	for mig_id in "${mig_ids[@]}"; do
+		mig_id="$(printf '%s\n' "$mig_id" | xargs)"
+		if [[ -z "$mig_id" ]]; then
+			continue
+		fi
+
+		if nvidia-smi mig -i "$gpu_id" -cgi "$mig_id" -C >/dev/null 2>&1; then
+			output_msg+="  OK: MIG tipo $mig_id creado\n"
+			gpu_ok=$(( gpu_ok + 1 ))
+		else
+			output_msg+="  [WARN] No se pudo crear MIG tipo $mig_id\n"
+			gpu_warn=$(( gpu_warn + 1 ))
+		fi
+	done
+
+	if (( gpu_err > 0 )); then
+		gpu_status="ERR"
+	elif (( gpu_warn > 0 )); then
+		gpu_status="WARN"
+	else
+		gpu_status="OK"
+	fi
+
+	output_msg+="\nResumen GPU $gpu_id: $gpu_status (OK=$gpu_ok WARN=$gpu_warn ERR=$gpu_err)\n"
+	show_status_message "Resultado" "$output_msg"
+	return 0
+}
+
 show_manual_configuration_menu() {
-	show_message \
-		"Configuracion manual" \
-		"Aqui ira la configuracion manual de MIG.\n\nDe momento solo queda montado el flujo y el punto de entrada del submenu."
+	local option=""
+	local selected_migs=""
+	local mig_rows=""
+	local checklist_items=()
+	local checklist_size=0
+	local mig_id
+	local mig_name
+
+	if [[ ! -f "$MIG_TYPES_FILE" ]]; then
+		show_message \
+			"Configuracion manual" \
+			"No se encontro el archivo de tipos MIG.\n\nRuta esperada:\n$MIG_TYPES_FILE"
+		return 1
+	fi
+
+	mig_rows="$(list_available_mig_types)"
+	if [[ -z "$mig_rows" ]]; then
+		show_message \
+			"Configuracion manual" \
+			"No se encontraron tipos MIG validos en:\n$MIG_TYPES_FILE"
+		return 1
+	fi
+
+	while IFS='|' read -r mig_id mig_name; do
+		if [[ -z "$mig_id" || -z "$mig_name" ]]; then
+			continue
+		fi
+		checklist_items+=("$mig_id" "$mig_name" "OFF")
+	done <<< "$mig_rows"
+
+	checklist_size=$(( ${#checklist_items[@]} / 3 ))
+	if (( checklist_size > 10 )); then
+		checklist_size=10
+	elif (( checklist_size < 4 )); then
+		checklist_size=4
+	fi
+
+	while true; do
+		option="$(show_menu \
+			"Configuracion manual" \
+			"Selecciona la GPU a configurar:" \
+			"0" "GPU 0" \
+			"1" "GPU 1" \
+			"2" "GPU 2" \
+			"3" "GPU 3" \
+			"v" "Volver")"
+
+		case "$option" in
+			0|1|2|3)
+				selected_migs="$(show_checklist \
+					"Configuracion manual GPU $option" \
+					"Marca los tipos MIG a crear en la GPU $option:" \
+					"$checklist_size" \
+					"${checklist_items[@]}")"
+
+				if [[ -z "$selected_migs" ]]; then
+					show_message "Configuracion manual" "No se selecciono ningun tipo MIG para la GPU $option."
+					continue
+				fi
+
+				apply_manual_gpu_config "$option" "$selected_migs"
+				;;
+			v|"")
+				break
+				;;
+			*)
+				show_message "Opcion no valida" "La opcion seleccionada no es valida."
+				;;
+		esac
+	done
 }
 
 show_modify_mig_menu() {
