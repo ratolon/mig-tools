@@ -5,6 +5,7 @@ set -o pipefail
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly MIG_STATUS_VIEWER="$SCRIPT_DIR/scripts/mig-status-view.sh"
+readonly UPDATE_SLURM_SCRIPT="$SCRIPT_DIR/scripts/update_slurm_config.sh"
 readonly PRESETS_FILE="$SCRIPT_DIR/presets.conf"
 readonly MIG_TYPES_FILE="$SCRIPT_DIR/mig-types.conf"
 readonly APP_TITLE="GPU MIG Config"
@@ -182,6 +183,7 @@ apply_preset() {
 	output_msg+="  SKIP=$total_skip\n"
 
 	show_status_message "Resultado" "$output_msg"
+	run_slurm_update
 	return 0
 }
 
@@ -244,6 +246,34 @@ show_status_message() {
 	esac
 
 	rm -f "$tmp_file"
+}
+
+run_slurm_update() {
+	local output=""
+	local tmp_file=""
+
+	if [[ ! -f "$UPDATE_SLURM_SCRIPT" ]]; then
+		show_message "Actualizacion SLURM" "No se encontro el script:\n$UPDATE_SLURM_SCRIPT"
+		return 1
+	fi
+
+	tmp_file="$(mktemp 2>/dev/null)"
+	if [[ -z "$tmp_file" ]]; then
+		show_message "Actualizacion SLURM" "No se pudo crear archivo temporal para ejecutar update_slurm_config."
+		return 1
+	fi
+
+	if bash "$UPDATE_SLURM_SCRIPT" >"$tmp_file" 2>&1; then
+		output="$(cat "$tmp_file")"
+		rm -f "$tmp_file"
+		show_status_message "SLURM actualizado" "$output"
+		return 0
+	fi
+
+	output="$(cat "$tmp_file")"
+	rm -f "$tmp_file"
+	show_status_message "Error actualizando SLURM" "$output"
+	return 1
 }
 
 show_menu() {
@@ -647,6 +677,7 @@ apply_manual_gpu_config() {
 
 	output_msg+="\nResumen GPU $gpu_id: $gpu_status (OK=$gpu_ok WARN=$gpu_warn ERR=$gpu_err)\n"
 	show_status_message "Resultado" "$output_msg"
+	run_slurm_update
 	return 0
 }
 
