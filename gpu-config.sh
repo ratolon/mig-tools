@@ -122,14 +122,18 @@ show_main_menu() {
 
 show_mig_status_menu() {
 	local status_rows=""
-	local option=""
 	local gpu_index
 	local gpu_model
 	local mig_state
 	local mig_layout
-	local detail_message
-	local description
-	local menu_items=()
+	local status_output=""
+	local title_line
+	local model_line
+	local instances_line
+	local content_width=0
+	local line
+	local border_line
+	local padded_line
 
 	if [[ ! -x "$MIG_STATUS_VIEWER" ]]; then
 		show_message \
@@ -152,7 +156,7 @@ show_mig_status_menu() {
 
 	while IFS='|' read -r gpu_index gpu_model mig_state mig_layout; do
 		gpu_index="${gpu_index:-}"
-		gpu_model="${gpu_model:-}"
+		gpu_model="${gpu_model:-desconocido}"
 		mig_state="${mig_state:-Off}"
 		mig_layout="${mig_layout:--}"
 
@@ -160,50 +164,59 @@ show_mig_status_menu() {
 			continue
 		fi
 
-		description="MIG $mig_state"
-		if [[ "$mig_state" == "On" ]]; then
-			description+=" | $mig_layout"
-		fi
+		title_line="GPU $gpu_index - MIG $mig_state"
+		model_line="Modelo: $gpu_model"
+		instances_line="Instancias: $mig_layout"
 
-		menu_items+=("$gpu_index" "$description")
+		for line in "$title_line" "$model_line" "$instances_line"; do
+			if (( ${#line} > content_width )); then
+				content_width=${#line}
+			fi
+		done
 	done <<< "$status_rows"
 
-	if (( ${#menu_items[@]} == 0 )); then
+	if (( content_width < 28 )); then
+		content_width=28
+	fi
+
+	border_line="+$(printf '%*s' $(( content_width + 2 )) '' | tr ' ' '-')+"
+
+	while IFS='|' read -r gpu_index gpu_model mig_state mig_layout; do
+		gpu_index="${gpu_index:-}"
+		gpu_model="${gpu_model:-desconocido}"
+		mig_state="${mig_state:-Off}"
+		mig_layout="${mig_layout:--}"
+
+		if [[ -z "$gpu_index" ]]; then
+			continue
+		fi
+
+		title_line="GPU $gpu_index - MIG $mig_state"
+		model_line="Modelo: $gpu_model"
+		instances_line="Instancias: $mig_layout"
+
+		if [[ -n "$status_output" ]]; then
+			status_output+=$'\n\n'
+		fi
+
+		status_output+="$border_line"
+		status_output+=$'\n'
+
+		for line in "$title_line" "$model_line" "$instances_line"; do
+			printf -v padded_line '%-*s' "$content_width" "$line"
+			status_output+="| $padded_line |"
+			status_output+=$'\n'
+		done
+
+		status_output+="$border_line"
+	done <<< "$status_rows"
+
+	if [[ -z "$status_output" ]]; then
 		show_message "Estado actual de MIG" "No se han podido interpretar las GPUs detectadas."
 		return 0
 	fi
 
-	while true; do
-		option="$(show_menu \
-			"Estado actual de MIG" \
-			"Selecciona una GPU para ver detalle:" \
-			"${menu_items[@]}" \
-			"v" "Volver")"
-
-		case "$option" in
-			v|"")
-				break
-				;;
-			*)
-				detail_message=""
-				while IFS='|' read -r gpu_index gpu_model mig_state mig_layout; do
-					if [[ "$gpu_index" == "$option" ]]; then
-						detail_message="GPU $gpu_index\nModelo: $gpu_model\nMIG: $mig_state"
-						if [[ "$mig_state" == "On" ]]; then
-							detail_message+="\nInstancias: $mig_layout"
-						fi
-						break
-					fi
-				done <<< "$status_rows"
-
-				if [[ -z "$detail_message" ]]; then
-					detail_message="No se ha encontrado informacion para la GPU seleccionada."
-				fi
-
-				show_message "Detalle de GPU" "$detail_message"
-				;;
-		esac
-	done
+	show_status_message "Estado actual de MIG" "$status_output"
 }
 
 show_preset_load_menu() {
