@@ -8,6 +8,7 @@ readonly MIN_WIDTH=60
 readonly PLAIN_CONTENT_MAX_WIDTH=92
 
 PLAIN_MODE=0
+ROWS_MODE=0
 
 trim() {
 	local value="$1"
@@ -309,11 +310,45 @@ render_plain_status() {
 	done <<< "$separator_line"
 }
 
+render_status_rows() {
+	local rows
+	local gpu_index
+	local gpu_model
+	local mig_mode
+	local mig_layout
+
+	rows="$(get_gpu_rows)"
+
+	if [[ -z "$rows" ]]; then
+		return 0
+	fi
+
+	while IFS=',' read -r gpu_index gpu_model mig_mode; do
+		gpu_index="$(trim "$gpu_index")"
+		gpu_model="$(trim "$gpu_model")"
+		mig_mode="$(trim "$mig_mode")"
+
+		if [[ -z "$gpu_index" ]]; then
+			continue
+		fi
+
+		if [[ "$mig_mode" == "Enabled" ]]; then
+			mig_layout="$(get_mig_layout "$gpu_index")"
+			printf '%s|%s|On|%s\n' "$gpu_index" "$gpu_model" "$mig_layout"
+		else
+			printf '%s|%s|Off|-\n' "$gpu_index" "$gpu_model"
+		fi
+	done <<< "$rows"
+}
+
 parse_args() {
 	while (( $# > 0 )); do
 		case "$1" in
 			--plain)
 				PLAIN_MODE=1
+				;;
+			--rows)
+				ROWS_MODE=1
 				;;
 		esac
 		shift
@@ -326,6 +361,10 @@ main() {
 	parse_args "$@"
 
 	if ! command -v nvidia-smi >/dev/null 2>&1; then
+		if (( ROWS_MODE == 1 )); then
+			return 0
+		fi
+
 		if (( PLAIN_MODE == 1 )); then
 			printf '%s\n' "nvidia-smi no esta disponible en este sistema."
 			return 0
@@ -335,6 +374,11 @@ main() {
 		render_box "$(get_terminal_width)" "nvidia-smi no esta disponible en este sistema." "Pulsa cualquier tecla para volver."
 		read -r -s -n 1 key < /dev/tty
 		clear
+		return 0
+	fi
+
+	if (( ROWS_MODE == 1 )); then
+		render_status_rows
 		return 0
 	fi
 

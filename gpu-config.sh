@@ -121,7 +121,15 @@ show_main_menu() {
 }
 
 show_mig_status_menu() {
-	local status_output=""
+	local status_rows=""
+	local option=""
+	local gpu_index
+	local gpu_model
+	local mig_state
+	local mig_layout
+	local detail_message
+	local description
+	local menu_items=()
 
 	if [[ ! -x "$MIG_STATUS_VIEWER" ]]; then
 		show_message \
@@ -130,18 +138,72 @@ show_mig_status_menu() {
 		return 1
 	fi
 
-	if ! status_output="$(MIG_STATUS_PLAIN_WIDTH=$(( STATUS_WIDTH - 10 )) "$MIG_STATUS_VIEWER" --plain)"; then
+	if ! status_rows="$("$MIG_STATUS_VIEWER" --rows)"; then
 		show_message \
 			"Estado actual de MIG" \
 			"No se ha podido consultar el estado de MIG en este momento."
 		return 1
 	fi
 
-	if [[ -z "$status_output" ]]; then
-		status_output="No se han recibido datos de estado MIG."
+	if [[ -z "$status_rows" ]]; then
+		show_message "Estado actual de MIG" "No se han recibido datos de estado MIG."
+		return 0
 	fi
 
-	show_status_message "Estado actual de MIG" "$status_output"
+	while IFS='|' read -r gpu_index gpu_model mig_state mig_layout; do
+		gpu_index="${gpu_index:-}"
+		gpu_model="${gpu_model:-}"
+		mig_state="${mig_state:-Off}"
+		mig_layout="${mig_layout:--}"
+
+		if [[ -z "$gpu_index" ]]; then
+			continue
+		fi
+
+		description="MIG $mig_state"
+		if [[ "$mig_state" == "On" ]]; then
+			description+=" | $mig_layout"
+		fi
+
+		menu_items+=("$gpu_index" "$description")
+	done <<< "$status_rows"
+
+	if (( ${#menu_items[@]} == 0 )); then
+		show_message "Estado actual de MIG" "No se han podido interpretar las GPUs detectadas."
+		return 0
+	fi
+
+	while true; do
+		option="$(show_menu \
+			"Estado actual de MIG" \
+			"Selecciona una GPU para ver detalle:" \
+			"${menu_items[@]}" \
+			"v" "Volver")"
+
+		case "$option" in
+			v|"")
+				break
+				;;
+			*)
+				detail_message=""
+				while IFS='|' read -r gpu_index gpu_model mig_state mig_layout; do
+					if [[ "$gpu_index" == "$option" ]]; then
+						detail_message="GPU $gpu_index\nModelo: $gpu_model\nMIG: $mig_state"
+						if [[ "$mig_state" == "On" ]]; then
+							detail_message+="\nInstancias: $mig_layout"
+						fi
+						break
+					fi
+				done <<< "$status_rows"
+
+				if [[ -z "$detail_message" ]]; then
+					detail_message="No se ha encontrado informacion para la GPU seleccionada."
+				fi
+
+				show_message "Detalle de GPU" "$detail_message"
+				;;
+		esac
+	done
 }
 
 show_preset_load_menu() {
