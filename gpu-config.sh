@@ -73,16 +73,17 @@ apply_preset() {
 		fi
 
 		output_msg+="GPU $gpu_id: Configurando con MIGs: $mig_config\n"
-		output_msg+="  - Deshabilitando MIG...\n"
-		
-		if ! nvidia-smi -i "$gpu_id" -mig 0 >/dev/null 2>&1; then
-			output_msg+="  - [ERROR] No se pudo deshabilitar MIG en GPU $gpu_id\n"
+		output_msg+="  - Limpiando estado MIG...\n"
+
+		output_msg+="  - Eliminando DCI virtual (Compute)...\n"
+		if ! nvidia-smi mig -i "$gpu_id" -dci >/dev/null 2>&1; then
+			output_msg+="  - [ERROR] No se pudo destruir CI en GPU  $gpu_id\n"
 			continue
 		fi
 
-		output_msg+="  - Habilitando MIG...\n"
-		if ! nvidia-smi -i "$gpu_id" -mig 1 >/dev/null 2>&1; then
-			output_msg+="  - [ERROR] No se pudo habilitar MIG en GPU $gpu_id\n"
+		output_msg+="  - Eliminando DGI virtual (Graphics)...\n"
+		if ! nvidia-smi mig -i "$gpu_id" -dgi >/dev/null 2>&1; then
+			output_msg+="  - [ERROR] No se pudo destruir GI en GPU  $gpu_id\n"
 			continue
 		fi
 
