@@ -25,7 +25,7 @@ while read -r line; do
         current_gpu="${BASH_REMATCH[1]}"
     fi
 
-    if [[ "$line" =~ MIG\ ([0-9]+g\.[0-9]+gb)\ Device ]]; then
+    if [[ "$line" =~ [[:space:]]MIG[[:space:]]+([0-9]+g\.[0-9]+gb)[[:space:]]+Device[[:space:]]+[0-9]+: ]]; then
         mig="${BASH_REMATCH[1]}"
         key="a100_${mig}"
         echo "${mig}"
