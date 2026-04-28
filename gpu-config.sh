@@ -9,7 +9,7 @@ readonly APP_TITLE="GPU MIG Config"
 readonly APP_HEIGHT=16
 readonly APP_WIDTH=72
 readonly MENU_HEIGHT=8
-readonly STATUS_HEIGHT=24
+readonly STATUS_HEIGHT=32
 readonly STATUS_WIDTH=100
 
 UI_BACKEND=""
