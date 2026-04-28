@@ -21,6 +21,7 @@ current_gpu=""
 
 while read -r line; do
     if [[ "$line" =~ ^GPU\ ([0-9]+): ]]; then
+        echo "Reading MIGs in GPU ${BASH_REMATCH[1]}"
         current_gpu="${BASH_REMATCH[1]}"
     fi
 
