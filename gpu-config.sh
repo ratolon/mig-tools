@@ -104,7 +104,7 @@ apply_preset() {
 		IFS=',' read -ra mig_ids <<< "$mig_config"
 		for mig_id in "${mig_ids[@]}"; do
 			mig_id="$(printf '%s\n' "$mig_id" | xargs)"
-			if nvidia-smi -i "$gpu_id" mig create -C -gi "$mig_id" >/dev/null 2>&1; then
+			if nvidia-smi mig -i "$gpu_id" -cgi "$mig_id" -C >/dev/null 2>&1; then
 				output_msg+="    OK: MIG tipo $mig_id creado\n"
 			else
 				output_msg+="    [WARN] No se pudo crear MIG tipo $mig_id en GPU $gpu_id\n"
