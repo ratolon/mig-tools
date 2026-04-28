@@ -40,7 +40,7 @@ END {
 if [[ -s "${TMP_COUNTS}" ]]; then
     awk -F'|' -v node="${NODE_NAME}" '
     BEGIN {
-        printf "NodeName=%s Gres=", node
+        printf "NodeName=%s Gres=nvidia_a100_80gb_pcie_", node
     }
     {
         if (NR > 1) {
