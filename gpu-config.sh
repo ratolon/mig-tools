@@ -57,15 +57,26 @@ show_message() {
 show_status_message() {
 	local title="$1"
 	local message="$2"
+	local tmp_file=""
+
+	tmp_file="$(mktemp 2>/dev/null)"
+	if [[ -z "$tmp_file" ]]; then
+		show_message "$title" "$message"
+		return 0
+	fi
+
+	printf '%s\n' "$message" > "$tmp_file"
 
 	case "$UI_BACKEND" in
 		whiptail)
-			whiptail --scrolltext --title "$title" --msgbox "$message" "$STATUS_HEIGHT" "$STATUS_WIDTH"
+			whiptail --title "$title" --textbox "$tmp_file" "$STATUS_HEIGHT" "$STATUS_WIDTH"
 			;;
 		dialog)
-			dialog --title "$title" --msgbox "$message" "$STATUS_HEIGHT" "$STATUS_WIDTH"
+			dialog --title "$title" --textbox "$tmp_file" "$STATUS_HEIGHT" "$STATUS_WIDTH"
 			;;
 	esac
+
+	rm -f "$tmp_file"
 }
 
 show_menu() {
