@@ -49,14 +49,19 @@ list_available_mig_types() {
 			id = $1
 			name = $2
 			max_count = (NF >= 3 ? $3 : 1)
+			g_units = (NF >= 4 ? $4 : 0)
 			gsub(/^[[:space:]]+|[[:space:]]+$/, "", id)
 			gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
 			gsub(/^[[:space:]]+|[[:space:]]+$/, "", max_count)
+			gsub(/^[[:space:]]+|[[:space:]]+$/, "", g_units)
 			if (id ~ /^[0-9]+$/ && name != "") {
 				if (max_count !~ /^[0-9]+$/) {
 					max_count = 1
 				}
-				print id "|" name "|" max_count
+				if (g_units !~ /^[0-9]+$/) {
+					g_units = 0
+				}
+				print id "|" name "|" max_count "|" g_units
 			}
 		}
 	' "$MIG_TYPES_FILE"
@@ -628,9 +633,11 @@ show_manual_configuration_menu() {
 	local mig_id
 	local mig_name
 	local mig_max
+	local mig_g
 	local quantity
 	local selection_summary
 	local apply_confirm
+	local total_g_used
 	local i
 
 	if [[ ! -f "$MIG_TYPES_FILE" ]]; then
@@ -644,7 +651,7 @@ show_manual_configuration_menu() {
 	if [[ -z "$mig_rows" ]]; then
 		show_message \
 			"Configuracion manual" \
-			"No se encontraron tipos MIG validos en:\n$MIG_TYPES_FILE\n\nFormato esperado: id|nombre|max"
+			"No se encontraron tipos MIG validos en:\n$MIG_TYPES_FILE\n\nFormato esperado: id|nombre|max|g"
 		return 1
 	fi
 
@@ -662,10 +669,15 @@ show_manual_configuration_menu() {
 			0|1|2|3)
 				selected_migs=""
 				selection_summary="GPU $option\n"
+				total_g_used=0
 
-				while IFS='|' read -r mig_id mig_name mig_max; do
+				while IFS='|' read -r mig_id mig_name mig_max mig_g; do
 					if [[ -z "$mig_id" || -z "$mig_name" ]]; then
 						continue
+					fi
+
+					if [[ ! "$mig_g" =~ ^[0-9]+$ ]]; then
+						mig_g=0
 					fi
 
 					quantity="$(show_quantity_selector "$option" "$mig_id" "$mig_name" "$mig_max")"
@@ -674,7 +686,8 @@ show_manual_configuration_menu() {
 						break
 					fi
 
-					selection_summary+=" - $mig_id ($mig_name): $quantity\n"
+					total_g_used=$(( total_g_used + quantity * mig_g ))
+					selection_summary+=" - $mig_id ($mig_name): $quantity [${mig_g}G c/u]\n"
 					for (( i=0; i<quantity; i++ )); do
 						if [[ -n "$selected_migs" ]]; then
 							selected_migs+="," 
@@ -692,6 +705,15 @@ show_manual_configuration_menu() {
 					show_message "Configuracion manual" "No seleccionaste instancias (>0) para la GPU $option."
 					continue
 				fi
+
+				if (( total_g_used > 7 )); then
+					show_message \
+						"Configuracion imposible" \
+						"La seleccion para GPU $option usa ${total_g_used}G y excede el maximo de 7G por GPU.\n\nVuelve a seleccionar cantidades 0..N."
+					continue
+				fi
+
+				selection_summary+="\nTotal usado: ${total_g_used}G de 7G"
 
 				apply_confirm="$(show_menu \
 					"Confirmar configuracion" \
