@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-NODE_NAME=$(hostname)
+NODE_NAME=$(hostname -s)
 GRES_CONF="/etc/slurm/gres.conf"
 TMP_GRES="/tmp/gres.conf.$$"
 TMP_COUNTS="/tmp/mig-counts.$$"
 TMP_SLURM_SNIPPET="/tmp/slurm-node-gres.$$"
 
 cleanup() {
-    rm -f "${TMP_COUNTS}" "${TMP_SLURM_SNIPPET}"
+    rm -f "${TMP_COUNTS}" "${TMP_SLURM_SNIPPET}" "/tmp/slurm.conf.$$"
 }
 trap cleanup EXIT
 
 echo "[INFO] Draining node ${NODE_NAME}..."
-#scontrol update NodeName=${NODE_NAME} State=DRAIN Reason="MIG reconfig"
+scontrol update NodeName=${NODE_NAME} State=DRAIN Reason="MIG reconfig"
 
 echo "[INFO] Waiting for jobs to finish..."
 while squeue -w ${NODE_NAME} -h | grep -q .; do
@@ -81,13 +81,25 @@ if [[ ! -f "${SLURM_CONF}" ]]; then
 fi
 
 echo "[INFO] Updating slurm.conf NodeName line..."
-GRES_LINE=$(cat "${TMP_SLURM_SNIPPET}" | grep -oP 'Gres=.*')
+GRES_VALUE=$(awk -F'Gres=' '{print $2}' "${TMP_SLURM_SNIPPET}")
+TMP_SLURM_CONF="/tmp/slurm.conf.$$"
 
 # Create backup
 sudo cp "${SLURM_CONF}" "${SLURM_CONF}.bak.$(date +%s)"
 
-# Update only the Gres= part in slurm.conf
-if ! sudo sed -i "s|Gres=[^ ]*|${GRES_LINE}|" "${SLURM_CONF}"; then
+# Update only Gres= in NodeName=<short-hostname> line
+if sudo awk -v node="${NODE_NAME}" -v gres="${GRES_VALUE}" '
+    {
+        if ($0 ~ "^NodeName=" && $0 ~ "(^|[[:space:]])NodeName=" node "([[:space:]]|$)") {
+            if ($0 ~ /Gres=[^[:space:]]+/) {
+                sub(/Gres=[^[:space:]]+/, "Gres=" gres)
+            }
+        }
+        print
+    }
+' "${SLURM_CONF}" > "${TMP_SLURM_CONF}"; then
+    sudo mv "${TMP_SLURM_CONF}" "${SLURM_CONF}"
+else
     echo "[ERROR] Failed to update slurm.conf"
     exit 1
 fi
