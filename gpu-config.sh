@@ -92,7 +92,6 @@ apply_preset() {
 		output_msg+="GPU $gpu_id: Configurando con MIGs: $mig_config\n"
 		output_msg+="  - Limpiando estado MIG...\n"
 
-		output_msg+="  - Eliminando DCI virtual (Compute)...\n"
 		nvidia-smi mig -i "$gpu_id" -dci >/dev/null 2>&1
 		exit_code=$?
 		if (( exit_code != 0 && exit_code != 6 )); then
@@ -101,11 +100,8 @@ apply_preset() {
 			total_err=$(( total_err + 1 ))
 			output_msg+="GPU $gpu_id: ERR\n\n"
 			continue
-		elif (( exit_code == 6 )); then
-			output_msg+="    (No habia CI que limpiar)\n"
 		fi
 
-		output_msg+="  - Eliminando DGI virtual (Graphics)...\n"
 		nvidia-smi mig -i "$gpu_id" -dgi >/dev/null 2>&1
 		exit_code=$?
 		if (( exit_code != 0 && exit_code != 6 )); then
@@ -114,16 +110,14 @@ apply_preset() {
 			total_err=$(( total_err + 1 ))
 			output_msg+="GPU $gpu_id: ERR\n\n"
 			continue
-		elif (( exit_code == 6 )); then
-			output_msg+="    (No habia GI que limpiar)\n"
 		fi
 
-		output_msg+="  - Creando MIGs...\n"
+		output_msg+="  - Creando MIGs... "
 		IFS=',' read -ra mig_ids <<< "$mig_config"
 		for mig_id in "${mig_ids[@]}"; do
 			mig_id="$(printf '%s\n' "$mig_id" | xargs)"
 			if nvidia-smi mig -i "$gpu_id" -cgi "$mig_id" -C >/dev/null 2>&1; then
-				output_msg+="    OK: MIG tipo $mig_id creado\n"
+				output_msg+="    OK ($mig_id)..."
 				gpu_ok=$(( gpu_ok + 1 ))
 				total_ok=$(( total_ok + 1 ))
 			else
@@ -132,6 +126,7 @@ apply_preset() {
 				total_warn=$(( total_warn + 1 ))
 			fi
 		done
+		output_msg+="\n"
 
 		if (( gpu_err > 0 )); then
 			gpu_status="ERR"
