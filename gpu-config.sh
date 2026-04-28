@@ -535,15 +535,39 @@ show_quantity_selector() {
 	local mig_id="$2"
 	local mig_name="$3"
 	local max_count="$4"
+	local mig_g="$5"
+	local remaining_g="$6"
 	local quantity_option=""
 	local quantity_items=()
+	local effective_max
+	local max_by_g
 	local i
 
 	if [[ ! "$max_count" =~ ^[0-9]+$ ]]; then
 		max_count=1
 	fi
 
-	for (( i=0; i<=max_count; i++ )); do
+	if [[ ! "$mig_g" =~ ^[0-9]+$ ]]; then
+		mig_g=0
+	fi
+
+	if [[ ! "$remaining_g" =~ ^[0-9]+$ ]]; then
+		remaining_g=0
+	fi
+
+	effective_max="$max_count"
+	if (( mig_g > 0 )); then
+		max_by_g=$(( remaining_g / mig_g ))
+		if (( max_by_g < effective_max )); then
+			effective_max=$max_by_g
+		fi
+	fi
+
+	if (( effective_max < 0 )); then
+		effective_max=0
+	fi
+
+	for (( i=0; i<=effective_max; i++ )); do
 		quantity_items+=("$i" "$i instancias")
 	done
 
@@ -551,7 +575,7 @@ show_quantity_selector() {
 
 	quantity_option="$(show_menu \
 		"GPU $gpu_id - Seleccion de cantidad" \
-		"Tipo $mig_id ($mig_name). Selecciona cantidad 0..$max_count:" \
+		"Tipo $mig_id ($mig_name) | ${mig_g}G por instancia | Restantes: ${remaining_g}G | Seleccion 0..$effective_max" \
 		"${quantity_items[@]}")"
 
 	if [[ "$quantity_option" == "c" || -z "$quantity_option" ]]; then
@@ -638,6 +662,7 @@ show_manual_configuration_menu() {
 	local selection_summary
 	local apply_confirm
 	local total_g_used
+	local remaining_g
 	local i
 
 	if [[ ! -f "$MIG_TYPES_FILE" ]]; then
@@ -680,7 +705,12 @@ show_manual_configuration_menu() {
 						mig_g=0
 					fi
 
-					quantity="$(show_quantity_selector "$option" "$mig_id" "$mig_name" "$mig_max")"
+					remaining_g=$(( 7 - total_g_used ))
+					if (( remaining_g < 0 )); then
+						remaining_g=0
+					fi
+
+					quantity="$(show_quantity_selector "$option" "$mig_id" "$mig_name" "$mig_max" "$mig_g" "$remaining_g")"
 					if [[ $? -ne 0 ]]; then
 						selection_summary=""
 						break
@@ -713,7 +743,7 @@ show_manual_configuration_menu() {
 					continue
 				fi
 
-				selection_summary+="\nTotal usado: ${total_g_used}G de 7G"
+				selection_summary+="\nTotal usado: ${total_g_used}G de 7G\nRestante: $(( 7 - total_g_used ))G"
 
 				apply_confirm="$(show_menu \
 					"Confirmar configuracion" \
