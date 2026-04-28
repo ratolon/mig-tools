@@ -56,24 +56,53 @@ fi
 
 if [[ ! -s "${TMP_COUNTS}" ]]; then
     echo "[WARN] No MIG devices detected from nvidia-smi -L"
+    exit 1
 fi
 
 echo "[INFO] Generated GRES:"
 cat "${TMP_GRES}"
 
-if [[ -s "${TMP_SLURM_SNIPPET}" ]]; then
-    echo "[INFO] Suggested slurm.conf Gres line for this node:"
-    cat "${TMP_SLURM_SNIPPET}"
-else
-    echo "[WARN] Could not build a slurm.conf Gres line from detected MIG devices"
+echo "[INFO] Suggested slurm.conf Gres line for this node:"
+cat "${TMP_SLURM_SNIPPET}"
+
+# Update gres.conf
+echo "[INFO] Updating gres.conf..."
+if ! sudo cp "${TMP_GRES}" "${GRES_CONF}"; then
+    echo "[ERROR] Failed to write ${GRES_CONF}. Check permissions."
+    exit 1
+fi
+echo "[INFO] gres.conf updated successfully."
+
+# Update slurm.conf NodeName line
+SLURM_CONF="/etc/slurm/slurm.conf"
+if [[ ! -f "${SLURM_CONF}" ]]; then
+    echo "[ERROR] slurm.conf not found at ${SLURM_CONF}"
+    exit 1
 fi
 
-#cp "${TMP_GRES}" "${GRES_CONF}"
+echo "[INFO] Updating slurm.conf NodeName line..."
+GRES_LINE=$(cat "${TMP_SLURM_SNIPPET}" | grep -oP 'Gres=.*')
 
-# echo "[INFO] Reconfiguring SLURM..."
-#scontrol reconfigure
+# Create backup
+sudo cp "${SLURM_CONF}" "${SLURM_CONF}.bak.$(date +%s)"
 
-#echo "[INFO] Resuming node..."
-#scontrol update NodeName=${NODE_NAME} State=RESUME
+# Update only the Gres= part in slurm.conf
+if ! sudo sed -i "s|Gres=[^ ]*|${GRES_LINE}|" "${SLURM_CONF}"; then
+    echo "[ERROR] Failed to update slurm.conf"
+    exit 1
+fi
+echo "[INFO] slurm.conf updated successfully."
 
-echo "[INFO] Done."
+echo "[INFO] Reconfiguring SLURM..."
+if ! sudo scontrol reconfigure; then
+    echo "[ERROR] Failed to reconfigure SLURM with scontrol reconfigure"
+    exit 1
+fi
+echo "[INFO] SLURM reconfiguration complete."
+
+echo "[INFO] Resuming node..."
+if ! sudo scontrol update NodeName="${NODE_NAME}" State=RESUME; then
+    echo "[WARN] Could not resume node (it may already be UP)"
+fi
+
+echo "[INFO] Done successfully!"
