@@ -196,6 +196,40 @@ show_menu() {
 	printf '%s\n' "$selection"
 }
 
+show_scrollable_menu() {
+	local title="$1"
+	local prompt="$2"
+	local menu_height="$3"
+	shift 3
+
+	local selection=""
+
+	case "$UI_BACKEND" in
+		whiptail)
+			if ! selection="$(whiptail \
+				--title "$title" \
+				--scrollbar \
+				--menu "$prompt" \
+				"$APP_HEIGHT" "$APP_WIDTH" "$menu_height" \
+				"$@" \
+				3>&1 1>&2 2>&3)"; then
+				selection=""
+			fi
+			;;
+		dialog)
+			if ! selection="$(dialog \
+				--stdout \
+				--title "$title" \
+				--menu "$prompt" \
+				"$APP_HEIGHT" "$APP_WIDTH" "$menu_height" \
+				"$@")"; then
+				selection=""
+			fi
+			;;
+	esac
+	printf '%s\n' "$selection"
+}
+
 show_main_menu() {
 	show_menu \
 		"$APP_TITLE" \
@@ -323,6 +357,7 @@ show_preset_load_menu() {
 	local presets=()
 	local preset_list
 	local option=""
+	local preset_menu_height=12
 
 	preset_list="$(list_available_presets)"
 
@@ -340,9 +375,10 @@ show_preset_load_menu() {
 	presets+=("v" "Volver")
 
 	while true; do
-		option="$(show_menu \
+		option="$(show_scrollable_menu \
 			"Carga de presets" \
 			"Selecciona un preset para aplicar:" \
+			"$preset_menu_height" \
 			"${presets[@]}")"
 
 		case "$option" in
