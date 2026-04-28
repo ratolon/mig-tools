@@ -24,7 +24,7 @@ echo "[INFO] Detecting MIG configuration..."
 
 nvidia-smi -L | awk '
 match($0, /^[[:space:]]*MIG[[:space:]]+([0-9]+g\.[0-9]+gb)[[:space:]]+Device[[:space:]]+[0-9]+:/, m) {
-    counts["a100_" m[1]]++
+    counts[m[1]]++
 }
 END {
     for (type in counts) {
@@ -40,13 +40,13 @@ END {
 if [[ -s "${TMP_COUNTS}" ]]; then
     awk -F'|' -v node="${NODE_NAME}" '
     BEGIN {
-        printf "NodeName=%s Gres=nvidia_a100_80gb_pcie_", node
+        printf "NodeName=%s Gres=", node
     }
     {
         if (NR > 1) {
             printf ","
         }
-        printf "gpu:%s:nvidia_a100_80gb_pcie_%s", $1, $2
+        printf "gpu:nvidia_a100_80gb_pcie_%s:%s", $1, $2
     }
     END {
         printf "\n"
