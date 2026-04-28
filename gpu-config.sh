@@ -9,6 +9,8 @@ readonly APP_TITLE="GPU MIG Config"
 readonly APP_HEIGHT=16
 readonly APP_WIDTH=72
 readonly MENU_HEIGHT=8
+readonly STATUS_HEIGHT=24
+readonly STATUS_WIDTH=100
 
 UI_BACKEND=""
 
@@ -48,6 +50,20 @@ show_message() {
 			;;
 		dialog)
 			dialog --title "$title" --msgbox "$message" "$APP_HEIGHT" "$APP_WIDTH"
+			;;
+	esac
+}
+
+show_status_message() {
+	local title="$1"
+	local message="$2"
+
+	case "$UI_BACKEND" in
+		whiptail)
+			whiptail --scrolltext --title "$title" --msgbox "$message" "$STATUS_HEIGHT" "$STATUS_WIDTH"
+			;;
+		dialog)
+			dialog --title "$title" --msgbox "$message" "$STATUS_HEIGHT" "$STATUS_WIDTH"
 			;;
 	esac
 }
@@ -95,6 +111,8 @@ show_main_menu() {
 }
 
 show_mig_status_menu() {
+	local status_output=""
+
 	if [[ ! -x "$MIG_STATUS_VIEWER" ]]; then
 		show_message \
 			"Estado actual de MIG" \
@@ -102,8 +120,18 @@ show_mig_status_menu() {
 		return 1
 	fi
 
-	clear
-	"$MIG_STATUS_VIEWER"
+	if ! status_output="$("$MIG_STATUS_VIEWER" --plain)"; then
+		show_message \
+			"Estado actual de MIG" \
+			"No se ha podido consultar el estado de MIG en este momento."
+		return 1
+	fi
+
+	if [[ -z "$status_output" ]]; then
+		status_output="No se han recibido datos de estado MIG."
+	fi
+
+	show_status_message "Estado actual de MIG" "$status_output"
 }
 
 show_preset_load_menu() {

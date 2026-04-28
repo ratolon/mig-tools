@@ -6,6 +6,8 @@ set -o pipefail
 readonly REFRESH_SECONDS="${MIG_STATUS_REFRESH_SECONDS:-10}"
 readonly MIN_WIDTH=60
 
+PLAIN_MODE=0
+
 trim() {
 	local value="$1"
 	value="${value#"${value%%[![:space:]]*}"}"
@@ -168,14 +170,88 @@ render_dashboard() {
 	fi
 }
 
+render_plain_status() {
+	local rows
+	local line_count=0
+	local gpu_index
+	local gpu_model
+	local mig_mode
+	local mig_layout
+	local status_line
+	local decoration_width
+	local decoration_line
+
+	rows="$(get_gpu_rows)"
+
+	if [[ -z "$rows" ]]; then
+		printf '%s\n' "No se han detectado GPUs NVIDIA mediante nvidia-smi."
+		return 0
+	fi
+
+	while IFS=',' read -r gpu_index gpu_model mig_mode; do
+		gpu_index="$(trim "$gpu_index")"
+		mig_mode="$(trim "$mig_mode")"
+
+		if [[ -z "$gpu_index" ]]; then
+			continue
+		fi
+
+		if [[ "$mig_mode" == "Enabled" ]]; then
+			mig_layout="$(get_mig_layout "$gpu_index")"
+			status_line="GPU $gpu_index - MIG On - $mig_layout"
+		else
+			status_line="GPU $gpu_index - MIG Off"
+		fi
+
+		decoration_width=${#status_line}
+		if (( decoration_width < 24 )); then
+			decoration_width=24
+		fi
+
+		decoration_line="$(repeat_char "$decoration_width" "-")"
+		printf '%s\n' "$decoration_line"
+		printf '%s\n' "$status_line"
+		printf '%s\n\n' "$decoration_line"
+
+		line_count=$(( line_count + 1 ))
+	done <<< "$rows"
+
+	if (( line_count == 0 )); then
+		printf '%s\n' "No se han podido interpretar las GPUs detectadas."
+	fi
+}
+
+parse_args() {
+	while (( $# > 0 )); do
+		case "$1" in
+			--plain)
+				PLAIN_MODE=1
+				;;
+		esac
+		shift
+	done
+}
+
 main() {
 	local key=""
 
+	parse_args "$@"
+
 	if ! command -v nvidia-smi >/dev/null 2>&1; then
+		if (( PLAIN_MODE == 1 )); then
+			printf '%s\n' "nvidia-smi no esta disponible en este sistema."
+			return 0
+		fi
+
 		clear
 		render_box "$(get_terminal_width)" "nvidia-smi no esta disponible en este sistema." "Pulsa cualquier tecla para volver."
 		read -r -s -n 1 key < /dev/tty
 		clear
+		return 0
+	fi
+
+	if (( PLAIN_MODE == 1 )); then
+		render_plain_status
 		return 0
 	fi
 
