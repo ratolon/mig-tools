@@ -48,10 +48,15 @@ list_available_mig_types() {
 		NF >= 2 {
 			id = $1
 			name = $2
+			max_count = (NF >= 3 ? $3 : 1)
 			gsub(/^[[:space:]]+|[[:space:]]+$/, "", id)
 			gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
+			gsub(/^[[:space:]]+|[[:space:]]+$/, "", max_count)
 			if (id ~ /^[0-9]+$/ && name != "") {
-				print id "|" name
+				if (max_count !~ /^[0-9]+$/) {
+					max_count = 1
+				}
+				print id "|" name "|" max_count
 			}
 		}
 	' "$MIG_TYPES_FILE"
@@ -520,6 +525,38 @@ show_preset_load_menu() {
 	done
 }
 
+show_quantity_selector() {
+	local gpu_id="$1"
+	local mig_id="$2"
+	local mig_name="$3"
+	local max_count="$4"
+	local quantity_option=""
+	local quantity_items=()
+	local i
+
+	if [[ ! "$max_count" =~ ^[0-9]+$ ]]; then
+		max_count=1
+	fi
+
+	for (( i=0; i<=max_count; i++ )); do
+		quantity_items+=("$i" "$i instancias")
+	done
+
+	quantity_items+=("c" "Cancelar")
+
+	quantity_option="$(show_menu \
+		"GPU $gpu_id - Seleccion de cantidad" \
+		"Tipo $mig_id ($mig_name). Selecciona cantidad 0..$max_count:" \
+		"${quantity_items[@]}")"
+
+	if [[ "$quantity_option" == "c" || -z "$quantity_option" ]]; then
+		printf '%s\n' ""
+		return 1
+	fi
+
+	printf '%s\n' "$quantity_option"
+}
+
 apply_manual_gpu_config() {
 	local gpu_id="$1"
 	local mig_config="$2"
@@ -588,10 +625,13 @@ show_manual_configuration_menu() {
 	local option=""
 	local selected_migs=""
 	local mig_rows=""
-	local checklist_items=()
-	local checklist_size=0
 	local mig_id
 	local mig_name
+	local mig_max
+	local quantity
+	local selection_summary
+	local apply_confirm
+	local i
 
 	if [[ ! -f "$MIG_TYPES_FILE" ]]; then
 		show_message \
@@ -604,22 +644,8 @@ show_manual_configuration_menu() {
 	if [[ -z "$mig_rows" ]]; then
 		show_message \
 			"Configuracion manual" \
-			"No se encontraron tipos MIG validos en:\n$MIG_TYPES_FILE"
+			"No se encontraron tipos MIG validos en:\n$MIG_TYPES_FILE\n\nFormato esperado: id|nombre|max"
 		return 1
-	fi
-
-	while IFS='|' read -r mig_id mig_name; do
-		if [[ -z "$mig_id" || -z "$mig_name" ]]; then
-			continue
-		fi
-		checklist_items+=("$mig_id" "$mig_name" "OFF")
-	done <<< "$mig_rows"
-
-	checklist_size=$(( ${#checklist_items[@]} / 3 ))
-	if (( checklist_size > 10 )); then
-		checklist_size=10
-	elif (( checklist_size < 4 )); then
-		checklist_size=4
 	fi
 
 	while true; do
@@ -634,18 +660,57 @@ show_manual_configuration_menu() {
 
 		case "$option" in
 			0|1|2|3)
-				selected_migs="$(show_checklist \
-					"Configuracion manual GPU $option" \
-					"Marca los tipos MIG a crear en la GPU $option:" \
-					"$checklist_size" \
-					"${checklist_items[@]}")"
+				selected_migs=""
+				selection_summary="GPU $option\n"
 
-				if [[ -z "$selected_migs" ]]; then
-					show_message "Configuracion manual" "No se selecciono ningun tipo MIG para la GPU $option."
+				while IFS='|' read -r mig_id mig_name mig_max; do
+					if [[ -z "$mig_id" || -z "$mig_name" ]]; then
+						continue
+					fi
+
+					quantity="$(show_quantity_selector "$option" "$mig_id" "$mig_name" "$mig_max")"
+					if [[ $? -ne 0 ]]; then
+						selection_summary=""
+						break
+					fi
+
+					selection_summary+=" - $mig_id ($mig_name): $quantity\n"
+					for (( i=0; i<quantity; i++ )); do
+						if [[ -n "$selected_migs" ]]; then
+							selected_migs+="," 
+						fi
+						selected_migs+="$mig_id"
+					done
+				done <<< "$mig_rows"
+
+				if [[ -z "$selection_summary" ]]; then
+					show_message "Configuracion manual" "Configuracion cancelada para GPU $option."
 					continue
 				fi
 
-				apply_manual_gpu_config "$option" "$selected_migs"
+				if [[ -z "$selected_migs" ]]; then
+					show_message "Configuracion manual" "No seleccionaste instancias (>0) para la GPU $option."
+					continue
+				fi
+
+				apply_confirm="$(show_menu \
+					"Confirmar configuracion" \
+					"$selection_summary\n\nAplicar esta configuracion?" \
+					"1" "Aplicar" \
+					"2" "Repetir seleccion" \
+					"3" "Cancelar")"
+
+				case "$apply_confirm" in
+					1)
+						apply_manual_gpu_config "$option" "$selected_migs"
+						;;
+					2)
+						continue
+						;;
+					*)
+						show_message "Configuracion manual" "Operacion cancelada para GPU $option."
+						;;
+				esac
 				;;
 			v|"")
 				break
