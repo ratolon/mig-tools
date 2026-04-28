@@ -134,6 +134,10 @@ show_mig_status_menu() {
 	local line
 	local border_line
 	local padded_line
+	local usable_width
+	local box_width
+	local left_padding=0
+	local left_margin=""
 
 	if [[ ! -x "$MIG_STATUS_VIEWER" ]]; then
 		show_message \
@@ -179,6 +183,17 @@ show_mig_status_menu() {
 		content_width=28
 	fi
 
+	usable_width=$(( STATUS_WIDTH - 8 ))
+	if (( usable_width < 40 )); then
+		usable_width=40
+	fi
+
+	box_width=$(( content_width + 4 ))
+	if (( usable_width > box_width )); then
+		left_padding=$(( (usable_width - box_width) / 2 ))
+	fi
+	printf -v left_margin '%*s' "$left_padding" ''
+
 	border_line="+$(printf '%*s' $(( content_width + 2 )) '' | tr ' ' '-')+"
 
 	while IFS='|' read -r gpu_index gpu_model mig_state mig_layout; do
@@ -199,16 +214,16 @@ show_mig_status_menu() {
 			status_output+=$'\n\n'
 		fi
 
-		status_output+="$border_line"
+		status_output+="$left_margin$border_line"
 		status_output+=$'\n'
 
 		for line in "$title_line" "$model_line" "$instances_line"; do
 			printf -v padded_line '%-*s' "$content_width" "$line"
-			status_output+="| $padded_line |"
+			status_output+="$left_margin| $padded_line |"
 			status_output+=$'\n'
 		done
 
-		status_output+="$border_line"
+		status_output+="$left_margin$border_line"
 	done <<< "$status_rows"
 
 	if [[ -z "$status_output" ]]; then
