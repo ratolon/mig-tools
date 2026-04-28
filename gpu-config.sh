@@ -12,6 +12,10 @@ readonly MENU_HEIGHT=8
 
 UI_BACKEND=""
 
+is_root_user() {
+	[[ "${EUID:-$(id -u)}" -eq 0 ]]
+}
+
 require_ui_backend() {
 	if command -v whiptail >/dev/null 2>&1; then
 		UI_BACKEND="whiptail"
@@ -147,6 +151,12 @@ main() {
 
 	require_ui_backend || exit 1
 
+	if ! is_root_user; then
+		show_message \
+			"Permisos insuficientes" \
+			"Estas ejecutando la herramienta sin root.\n\nPodras visualizar estado, pero para modificar MIG debes lanzar con sudo/root."
+	fi
+
 	while true; do
 		option="$(show_main_menu)"
 
@@ -155,7 +165,13 @@ main() {
 				show_mig_status_menu
 				;;
 			2)
-				show_modify_mig_menu
+				if is_root_user; then
+					show_modify_mig_menu
+				else
+					show_message \
+						"Permisos insuficientes" \
+						"La modificacion de MIG requiere sudo/root.\n\nVuelve a ejecutar la herramienta con privilegios elevados."
+				fi
 				;;
 			3|"")
 				break

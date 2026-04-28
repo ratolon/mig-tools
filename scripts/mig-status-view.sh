@@ -68,11 +68,46 @@ get_gpu_rows() {
 	nvidia-smi --query-gpu=index,name,mig.mode.current --format=csv,noheader,nounits 2>/dev/null
 }
 
+get_mig_layout_from_l_output() {
+	local gpu_index="$1"
+	local layout
+
+	layout="$(nvidia-smi -L 2>/dev/null | awk -v idx="$gpu_index" '
+		$1 == "GPU" {
+			current = ""
+			if ($2 ~ /^[0-9]+:$/) {
+				gsub(":", "", $2)
+				current = $2
+			}
+			next
+		}
+		$1 == "MIG" && current == idx {
+			profile = $2
+			gsub(/^[[:space:]]+|[[:space:]]+$/, "", profile)
+			if (profile != "") {
+				print profile
+			}
+		}
+	' | paste -sd ',' - | sed 's/,/, /g')"
+
+	printf '%s\n' "$layout"
+}
+
+get_mig_layout_from_mig_cli() {
+	local gpu_index="$1"
+
+	nvidia-smi mig -lgi -i "$gpu_index" 2>/dev/null | grep -Eo '([0-9]+c\.)?[0-9]+g\.[0-9]+gb' | paste -sd ',' - | sed 's/,/, /g'
+}
+
 get_mig_layout() {
 	local gpu_index="$1"
 	local layout
 
-	layout="$(nvidia-smi mig -lgi -i "$gpu_index" 2>/dev/null | grep -Eo '([0-9]+c\.)?[0-9]+g\.[0-9]+gb' | paste -sd ',' - | sed 's/,/, /g')"
+	layout="$(get_mig_layout_from_l_output "$gpu_index")"
+
+	if [[ -z "$layout" ]]; then
+		layout="$(get_mig_layout_from_mig_cli "$gpu_index")"
+	fi
 
 	if [[ -z "$layout" ]]; then
 		printf '%s\n' "sin instancias creadas"
