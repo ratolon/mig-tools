@@ -106,6 +106,23 @@ get_gpu_rows() {
 	nvidia-smi --query-gpu=index,name,mig.mode.current --format=csv,noheader,nounits 2>/dev/null
 }
 
+get_plain_view_width() {
+	local configured_width="${MIG_STATUS_PLAIN_WIDTH:-}"
+	local width
+
+	if [[ "$configured_width" =~ ^[0-9]+$ ]] && (( configured_width >= 30 )); then
+		printf '%s\n' "$configured_width"
+		return 0
+	fi
+
+	width="$(tput cols 2>/dev/null || printf '100\n')"
+	if [[ ! "$width" =~ ^[0-9]+$ ]] || (( width < 30 )); then
+		width=100
+	fi
+
+	printf '%s\n' "$width"
+}
+
 get_mig_layout_from_l_output() {
 	local gpu_index="$1"
 	local layout
@@ -217,12 +234,26 @@ render_plain_status() {
 	local content_width=0
 	local border_line
 	local separator_line=""
+	local plain_view_width
+	local effective_content_max
+	local box_width
+	local left_padding
+	local left_margin=""
 
 	rows="$(get_gpu_rows)"
 
 	if [[ -z "$rows" ]]; then
 		printf '%s\n' "No se han detectado GPUs NVIDIA mediante nvidia-smi."
 		return 0
+	fi
+
+	plain_view_width="$(get_plain_view_width)"
+	effective_content_max=$(( plain_view_width - 12 ))
+	if (( effective_content_max > PLAIN_CONTENT_MAX_WIDTH )); then
+		effective_content_max=$PLAIN_CONTENT_MAX_WIDTH
+	fi
+	if (( effective_content_max < 24 )); then
+		effective_content_max=24
 	fi
 
 	while IFS=',' read -r gpu_index gpu_model mig_mode; do
@@ -240,7 +271,7 @@ render_plain_status() {
 			status_line="GPU $gpu_index - MIG Off"
 		fi
 
-		status_line="$(truncate_text "$status_line" "$PLAIN_CONTENT_MAX_WIDTH")"
+		status_line="$(truncate_text "$status_line" "$effective_content_max")"
 		if (( ${#status_line} > content_width )); then
 			content_width=${#status_line}
 		fi
@@ -262,12 +293,19 @@ render_plain_status() {
 		content_width=24
 	fi
 
+	box_width=$(( content_width + 4 ))
+	left_padding=0
+	if (( plain_view_width > box_width )); then
+		left_padding=$(( (plain_view_width - box_width) / 2 ))
+	fi
+	left_margin="$(repeat_char "$left_padding" ' ')"
+
 	border_line="+$(repeat_char "$(( content_width + 2 ))" '-')+"
 
 	while IFS= read -r content_line; do
-		printf '%s\n' "$border_line"
-		printf '| %s |\n' "$(center_text "$content_line" "$content_width")"
-		printf '%s\n\n' "$border_line"
+		printf '%s%s\n' "$left_margin" "$border_line"
+		printf '%s| %s |\n' "$left_margin" "$(center_text "$content_line" "$content_width")"
+		printf '%s%s\n\n' "$left_margin" "$border_line"
 	done <<< "$separator_line"
 }
 

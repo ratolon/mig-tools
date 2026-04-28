@@ -130,7 +130,7 @@ show_mig_status_menu() {
 		return 1
 	fi
 
-	if ! status_output="$("$MIG_STATUS_VIEWER" --plain)"; then
+	if ! status_output="$(MIG_STATUS_PLAIN_WIDTH=$(( STATUS_WIDTH - 10 )) "$MIG_STATUS_VIEWER" --plain)"; then
 		show_message \
 			"Estado actual de MIG" \
 			"No se ha podido consultar el estado de MIG en este momento."
