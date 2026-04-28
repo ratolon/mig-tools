@@ -5,6 +5,7 @@ set -o pipefail
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly MIG_STATUS_VIEWER="$SCRIPT_DIR/scripts/mig-status-view.sh"
+readonly PRESETS_FILE="$SCRIPT_DIR/presets.conf"
 readonly APP_TITLE="GPU MIG Config"
 readonly APP_HEIGHT=16
 readonly APP_WIDTH=72
@@ -16,6 +17,89 @@ UI_BACKEND=""
 
 is_root_user() {
 	[[ "${EUID:-$(id -u)}" -eq 0 ]]
+}
+
+list_available_presets() {
+	if [[ ! -f "$PRESETS_FILE" ]]; then
+		return 1
+	fi
+
+	grep -E '^\[.+\]$' "$PRESETS_FILE" | sed 's/\[//g; s/\]//g'
+}
+
+parse_preset_config() {
+	local preset_name="$1"
+	local gpu_id="$2"
+
+	if [[ ! -f "$PRESETS_FILE" ]]; then
+		return 1
+	fi
+
+	awk -v pname="$preset_name" -v gpu="gpu$gpu_id" '
+		BEGIN { in_section = 0; found = 0 }
+		/^\[.+\]$/ {
+			gsub(/\[|\]/, "")
+			in_section = ($0 == pname)
+			next
+		}
+		in_section && $0 ~ "^" gpu "=" {
+			gsub("^" gpu "=", "")
+			print $0
+			found = 1
+			exit
+		}
+		END { if (!found) print "-" }
+	' "$PRESETS_FILE"
+}
+
+apply_preset() {
+	local preset_name="$1"
+	local output_msg=""
+
+	if [[ ! -f "$PRESETS_FILE" ]]; then
+		show_message "Error" "No se encontro el archivo de presets en:\n$PRESETS_FILE"
+		return 1
+	fi
+
+	output_msg="Aplicando preset: $preset_name\n\n"
+
+	for gpu_id in 0 1 2 3; do
+		local mig_config
+		mig_config="$(parse_preset_config "$preset_name" "$gpu_id")"
+
+		if [[ "$mig_config" == "-" ]]; then
+			output_msg+="GPU $gpu_id: No configurada (saltada)\n"
+			continue
+		fi
+
+		output_msg+="GPU $gpu_id: Configurando con MIGs: $mig_config\n"
+		output_msg+="  - Deshabilitando MIG...\n"
+		
+		if ! nvidia-smi -i "$gpu_id" -mig 0 >/dev/null 2>&1; then
+			output_msg+="  - [ERROR] No se pudo deshabilitar MIG en GPU $gpu_id\n"
+			continue
+		fi
+
+		output_msg+="  - Habilitando MIG...\n"
+		if ! nvidia-smi -i "$gpu_id" -mig 1 >/dev/null 2>&1; then
+			output_msg+="  - [ERROR] No se pudo habilitar MIG en GPU $gpu_id\n"
+			continue
+		fi
+
+		output_msg+="  - Creando MIGs...\n"
+		IFS=',' read -ra mig_ids <<< "$mig_config"
+		for mig_id in "${mig_ids[@]}"; do
+			mig_id="$(printf '%s\n' "$mig_id" | xargs)"
+			if ! nvidia-smi -i "$gpu_id" mig create -C -gi "$mig_id" >/dev/null 2>&1; then
+				output_msg+="    [WARN] No se pudo crear MIG tipo $mig_id en GPU $gpu_id\n"
+			fi
+		done
+
+		output_msg+="GPU $gpu_id: OK\n\n"
+	done
+
+	show_message "Resultado" "$output_msg"
+	return 0
 }
 
 require_ui_backend() {
@@ -235,9 +319,44 @@ show_mig_status_menu() {
 }
 
 show_preset_load_menu() {
-	show_message \
-		"Carga de presets" \
-		"Aqui ira la carga de presets de MIG.\n\nDe momento solo queda montado el flujo y el punto de entrada del submenu."
+	local presets=()
+	local preset_list
+	local option=""
+
+	preset_list="$(list_available_presets)"
+
+	if [[ -z "$preset_list" ]]; then
+		show_message \
+			"Carga de presets" \
+			"No se encontraron presets disponibles.\n\nVerifica que el archivo de presets existe en:\n$PRESETS_FILE"
+		return 0
+	fi
+
+	while IFS= read -r preset_name; do
+		presets+=("$preset_name" "Cargar preset: $preset_name")
+	done <<< "$preset_list"
+
+	presets+=("v" "Volver")
+
+	while true; do
+		option="$(show_menu \
+			"Carga de presets" \
+			"Selecciona un preset para aplicar:" \
+			"${presets[@]}")"
+
+		case "$option" in
+			v|"")
+				break
+				;;
+			*)
+				if grep -q "^\[$option\]$" "$PRESETS_FILE"; then
+					apply_preset "$option"
+				else
+					show_message "Error" "No se encontro el preset: $option"
+				fi
+				;;
+		esac
+	done
 }
 
 show_manual_configuration_menu() {
