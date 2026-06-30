@@ -8,9 +8,7 @@ fi
 
 CRYOSPARCW_BIN="$1"
 WORKER_HOSTNAME="$2"
-CRYOSPARC_MASTER_HOSTNAME="${CRYOSPARC_MASTER_HOSTNAME:-}"
-CRYOSPARC_PORT="${CRYOSPARC_PORT:-}"
-CRYOSPARC_SSDPATH="${CRYOSPARC_SSDPATH:-}"
+CRYOSPARC_MASTER_HOSTNAME="$3"
 
 if [[ ! -x "$CRYOSPARCW_BIN" ]]; then
     echo "[ERROR] cryosparcw executable not found or not executable: $CRYOSPARCW_BIN"
@@ -23,13 +21,7 @@ if [[ -n "$CRYOSPARC_MASTER_HOSTNAME" ]]; then
     CMD+=(--master "$CRYOSPARC_MASTER_HOSTNAME")
 fi
 
-if [[ -n "$CRYOSPARC_PORT" ]]; then
-    CMD+=(--port "$CRYOSPARC_PORT")
-fi
-
-if [[ -n "$CRYOSPARC_SSDPATH" ]]; then
-    CMD+=(--ssdpath "$CRYOSPARC_SSDPATH")
-fi
+CMD+=(--nossd )
 
 echo "[INFO] Updating managed worker configuration for $WORKER_HOSTNAME..."
 "${CMD[@]}"
